@@ -61,9 +61,9 @@ async fn main() -> std::io::Result<()> {
 
     println!("🚀 Server started successfully");
 
-    HttpServer::new(move || {
+    HttpServer::new(move || { 
         let cors = Cors::default()
-            .allowed_origin("http://localhost:3000")
+            .allowed_origin("http://0.0.0.0:3000")
             .allowed_methods(vec!["GET", "POST"])
             .allowed_headers(vec![
                 header::CONTENT_TYPE,
@@ -82,7 +82,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             
     })
-    .bind(("127.0.0.1", 8000))?
+    .bind(("0.0.0.0", 8000))?
     .run()
     .await
 }
