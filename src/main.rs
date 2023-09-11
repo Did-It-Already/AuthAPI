@@ -4,6 +4,7 @@ use actix_web::middleware::Logger;
 use actix_web::{http::header, web, App, HttpServer};
 use config::Config;
 use dotenv::dotenv;
+use redis::Client;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 
@@ -13,11 +14,13 @@ mod handler;
 mod jwt_auth;
 mod model;
 mod response;
+mod token;
 
 // Types
 pub struct AppState {
     db: Pool<Postgres>,
     env: Config,
+    redis_client: Client,
 }
 
 #[actix_web::main]
@@ -45,6 +48,16 @@ async fn main() -> std::io::Result<()> {
             return Ok(());
         }
     };
+    let redis_client = match Client::open(config.redis_url.to_owned()) {
+        Ok(client) => {
+            println!("✅Connection to the redis is successful!");
+            client
+        }
+        Err(e) => {
+            println!("🔥 Error connecting to Redis: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     println!("🚀 Server started successfully");
 
@@ -62,6 +75,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
                 env: config.clone(),
+                redis_client: redis_client.clone(),
             }))
             .configure(handler::config)
             .wrap(cors)

@@ -1,8 +1,8 @@
 use crate::{
     jwt_auth,
-    model::{LoginUserSchema, RegisterUserSchema, TokenClaims, User},
+    model::{LoginUserSchema, RegisterUserSchema, User, RefreshSchema},
     response::FilteredUser,
-    AppState,
+    token, AppState,
 };
 use actix_web::{
     get, post, web, HttpMessage, HttpRequest, HttpResponse, Responder,
@@ -11,8 +11,7 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use chrono::{prelude::*, Duration};
-use jsonwebtoken::{encode, EncodingKey, Header};
+use redis::AsyncCommands;
 use serde_json::json;
 use sqlx::Row;
 
@@ -73,38 +72,157 @@ async fn login_user_handler(
         .await
         .unwrap();
 
-    let is_valid = query_result.to_owned().map_or(false, |user| {
-        let parsed_hash = PasswordHash::new(&user.password).unwrap();
-        Argon2::default()
-            .verify_password(body.password.as_bytes(), &parsed_hash)
-            .map_or(false, |_| true)
-    });
+    let user = match query_result {
+        Some(user) => user,
+        None => {
+            return HttpResponse::BadRequest().json(
+                serde_json::json!({"status": "fail", "message": "Invalid email or password"}),
+            );
+        }
+    };
+
+    let is_valid = PasswordHash::new(&user.password)
+        .and_then(|parsed_hash| {
+            Argon2::default().verify_password(body.password.as_bytes(), &parsed_hash)
+        })
+        .map_or(false, |_| true);
 
     if !is_valid {
         return HttpResponse::BadRequest()
             .json(json!({"status": "fail", "message": "Invalid email or password"}));
     }
 
-    let user = query_result.unwrap();
 
-    let now = Utc::now();
-    let iat = now.timestamp() as usize;
-    let exp = (now + Duration::minutes(60)).timestamp() as usize;
-    let claims: TokenClaims = TokenClaims {
-        sub: user.id.to_string(),
-        exp,
-        iat,
+    let access_token_details = match token::generate_jwt_token(
+        user.id,
+        data.env.access_token_max_age,
+        data.env.access_token_private_key.to_owned(),
+    ) {
+        Ok(token_details) => token_details,
+        Err(e) => {
+            return HttpResponse::BadGateway()
+                .json(serde_json::json!({"status": "fail", "message": format_args!("{}", e)}));
+        }
     };
 
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(data.env.jwt_secret.as_ref()),
-    )
-    .unwrap();
+    let refresh_token_details = match token::generate_jwt_token(
+        user.id,
+        data.env.refresh_token_max_age,
+        data.env.refresh_token_private_key.to_owned(),
+    ) {
+        Ok(token_details) => token_details,
+        Err(e) => {
+            return HttpResponse::BadGateway()
+                .json(serde_json::json!({"status": "fail", "message": format_args!("{}", e)}));
+        }
+    };
 
     HttpResponse::Ok()
-        .json(json!({"status": "success", "token": token}))
+        .json(json!({"status": "success", "access": access_token_details.token.clone().unwrap() , "refresh":refresh_token_details.token.clone().unwrap()}))
+}
+#[post("/auth/refresh")]
+async fn refresh_token_handler(
+    data: web::Data<AppState>,
+    body: web::Json<RefreshSchema>,
+) -> impl Responder {
+
+    let refresh_token = body.refresh.to_owned();
+    if refresh_token.is_empty() {
+        return HttpResponse::BadRequest().json(
+            serde_json::json!({"status": "fail", "message": "Refresh token is required"}),
+        );
+    }
+
+
+    let refresh_token_details =
+        match token::verify_jwt_token(data.env.refresh_token_public_key.to_owned(), &refresh_token)
+        {
+            Ok(token_details) => token_details,
+            Err(e) => {
+                return HttpResponse::Forbidden().json(
+                    serde_json::json!({"status": "fail", "message": "Invalid refresh token"}),
+                );
+            }
+        };
+    let result = data.redis_client.get_async_connection().await;
+    println!("{}", result.is_err());
+    let mut redis_client = match result {
+        Ok(redis_client) => redis_client,
+        Err(e) => {
+            return HttpResponse::Forbidden().json(
+                serde_json::json!({"status": "fail", "message": format!("Could not connect to Redis: {}", e)}),
+            );
+        }
+    };
+
+    let redis_result: redis::RedisResult<String> = redis_client
+        .get(refresh_token_details.token_uuid.to_string())
+        .await;
+    
+    let already_consumed_token = match redis_result {
+        Ok(_token) => true,
+        Err(_) => false
+    };
+    if already_consumed_token {
+        return HttpResponse::Forbidden()
+            .json(serde_json::json!({"status": "fail", "message": "The refresh token has already been used"}));
+    }
+
+    let user_id_uuid = refresh_token_details.user_id.to_owned();
+    let query_result = sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", user_id_uuid)
+        .fetch_optional(&data.db)
+        .await
+        .unwrap();
+
+    if query_result.is_none() {
+        return HttpResponse::Forbidden()
+            .json(serde_json::json!({"status": "fail", "message": "the user belonging to this token no logger exists"}));
+    }
+
+    let user = query_result.unwrap();
+
+    let access_token_details = match token::generate_jwt_token(
+        user.id,
+        data.env.access_token_max_age,
+        data.env.access_token_private_key.to_owned(),
+    ) {
+        Ok(token_details) => token_details,
+        Err(e) => {
+            return HttpResponse::BadGateway()
+                .json(serde_json::json!({"status": "fail", "message": format_args!("{:?}", e)}));
+        }
+    };
+
+    
+
+    let redis_result: redis::RedisResult<()> = redis_client
+        .set_ex(
+            refresh_token_details.token_uuid.to_string(),
+            user.id.to_string(),
+            (data.env.access_token_max_age * 60) as usize,
+        )
+        .await;
+    
+    let refresh_token_details = match token::generate_jwt_token(
+        user.id,
+        data.env.refresh_token_max_age,
+        data.env.refresh_token_private_key.to_owned(),
+    ) {
+        Ok(token_details) => token_details,
+        Err(e) => {
+            return HttpResponse::BadGateway()
+                .json(serde_json::json!({"status": "fail", "message": format_args!("{}", e)}));
+        }
+    };
+
+    if redis_result.is_err() {
+        return HttpResponse::UnprocessableEntity().json(
+            serde_json::json!({"status": "error", "message": format_args!("{:?}", redis_result.unwrap_err())}),
+        );
+    }
+
+    HttpResponse::Ok()
+        .json(serde_json::json!({"status": "success", "access": access_token_details.token.unwrap(), "refresh": refresh_token_details.token.unwrap()}))
 }
 
 
@@ -143,6 +261,7 @@ pub fn config(conf: &mut web::ServiceConfig) {
     let scope = web::scope("/api")
         .service(register_user_handler)
         .service(login_user_handler)
-        .service(check_token_handler);
+        .service(check_token_handler)
+        .service(refresh_token_handler);
     conf.service(scope);
 }

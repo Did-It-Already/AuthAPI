@@ -1,13 +1,14 @@
 use core::fmt;
 use std::future::{ready, Ready};
 
-use actix_web::error::ErrorUnauthorized;
+use actix_web::error::{ErrorInternalServerError, ErrorUnauthorized};
 use actix_web::{dev::Payload, Error as ActixWebError};
-use actix_web::{http, web, FromRequest, HttpMessage, HttpRequest};
-use jsonwebtoken::{decode, DecodingKey, Validation};
-use serde::Serialize;
+use actix_web::{http, web, FromRequest, HttpRequest, HttpMessage};
+use futures::executor::block_on;
+use serde::{Serialize};
 
-use crate::model::TokenClaims;
+use crate::model::User;
+use crate::token;
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -32,38 +33,70 @@ impl FromRequest for JwtMiddleware {
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
         let data = req.app_data::<web::Data<AppState>>().unwrap();
 
-        let token = req.headers()
+        let access_token = req.headers()
                     .get(http::header::AUTHORIZATION)
                     .map(|h| h.to_str().unwrap().split_at(7).1.to_string());
+            
 
 
-        if token.is_none() {
+        if access_token.is_none() {
             let json_error = ErrorResponse {
                 status: "fail".to_string(),
-                message: "You are not logged in, please provide token".to_string(),
+                message: "No token found".to_string(),
             };
             return ready(Err(ErrorUnauthorized(json_error)));
         }
 
-        let claims = match decode::<TokenClaims>(
-            &token.unwrap(),
-            &DecodingKey::from_secret(data.env.jwt_secret.as_ref()),
-            &Validation::default(),
+        let token_details = match token::verify_jwt_token(
+            data.env.access_token_public_key.to_owned(),
+            &access_token.unwrap(),
         ) {
-            Ok(c) => c.claims,
-            Err(_) => {
+            Ok(token_details) => token_details,
+            Err(e) => {
                 let json_error = ErrorResponse {
                     status: "fail".to_string(),
-                    message: "Invalid token".to_string(),
+                    message: format!("{:?}", e),
                 };
                 return ready(Err(ErrorUnauthorized(json_error)));
             }
         };
 
-        let user_id = uuid::Uuid::parse_str(claims.sub.as_str()).unwrap();
-        req.extensions_mut()
-            .insert::<uuid::Uuid>(user_id.to_owned());
+        let user_id_uuid = token_details.user_id.to_owned();
+        let user_exists_result = async move {
 
-        ready(Ok(JwtMiddleware { user_id }))
+
+            let query_result =
+                sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", user_id_uuid)
+                    .fetch_optional(&data.db)
+                    .await;
+
+            match query_result {
+                Ok(Some(user)) => Ok(user),
+                Ok(None) => {
+                    let json_error = ErrorResponse {
+                        status: "Failed".to_string(),
+                        message: "the user belonging to this token no longer exists".to_string(),
+                    };
+                    Err(ErrorUnauthorized(json_error))
+                }
+                Err(_) => {
+                    let json_error = ErrorResponse {
+                        status: "Error".to_string(),
+                        message: "Failed to check user existence".to_string(),
+                    };
+                    Err(ErrorInternalServerError(json_error))
+                }
+            }
+        };
+
+        req.extensions_mut()
+            .insert::<uuid::Uuid>(token_details.user_id.to_owned());
+
+        match block_on(user_exists_result) {
+            Ok(_user) => ready(Ok(JwtMiddleware {
+                user_id: token_details.user_id.to_owned()
+            })),
+            Err(error) => ready(Err(error)),
+        }
     }
 }
