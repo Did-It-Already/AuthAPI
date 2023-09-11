@@ -138,7 +138,7 @@ async fn refresh_token_handler(
         match token::verify_jwt_token(data.env.refresh_token_public_key.to_owned(), &refresh_token)
         {
             Ok(token_details) => token_details,
-            Err(e) => {
+            Err(_) => {
                 return HttpResponse::Forbidden().json(
                     serde_json::json!({"status": "fail", "message": "Invalid refresh token"}),
                 );
