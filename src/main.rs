@@ -5,7 +5,7 @@ use actix_web::{http::header, web, App, HttpServer};
 use config::Config;
 use dotenv::dotenv;
 use redis::Client;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Executor};
 
 
 // Modules 
@@ -35,11 +35,17 @@ async fn main() -> std::io::Result<()> {
 
     let pool = match PgPoolOptions::new()
         .max_connections(10)
+        .after_connect(|conn, _meta| Box::pin(async move {   
+            conn.execute("DEALLOCATE ALL;")
+                .await?;
+            Ok(())
+        }))
         .connect(&config.database_url)
         .await
     {
         Ok(pool) => {
-            println!("✅Connection to the database is successful!");
+            println!("✅Connection to pg database is successful!");
+
             pool
         }
         Err(e) => {
@@ -54,12 +60,12 @@ async fn main() -> std::io::Result<()> {
             client
         }
         Err(e) => {
-            println!("🔥 Error connecting to Redis: {}", e);
+            println!("Error connecting to Redis: {}", e);
             std::process::exit(1);
         }
     };
 
-    println!("🚀 Server started successfully");
+    println!("🚀  Server started successfully ");
 
     HttpServer::new(move || { 
         let cors = Cors::default()
