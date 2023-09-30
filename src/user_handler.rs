@@ -1,6 +1,6 @@
 use crate::{
     user_model::{RegisterUserSchema, User},
-    response::filter_user_record, AppState
+    user_service::filter_user_record, AppState
 };
 use actix_web::{
      post, web, HttpResponse, Responder,

@@ -17,7 +17,7 @@ mod user_model;
 mod response;
 mod token_model;
 mod token_service;
-
+mod user_service;
 // Types
 pub struct AppState {
     db: Pool<Postgres>,

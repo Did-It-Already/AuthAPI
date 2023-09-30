@@ -1,7 +1,7 @@
 use crate::{
     jwt_auth,
     user_model::{LoginUserSchema,  User, RefreshSchema},
-    response::filter_user_record,
+    user_service::filter_user_record,
     token_service, AppState
 };
 use actix_web::{
