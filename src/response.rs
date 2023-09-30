@@ -1,4 +1,5 @@
 use serde::Serialize;
+use crate::model::User;
 
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize)]
@@ -16,4 +17,11 @@ pub struct UserData {
 pub struct UserResponse {
     pub status: String,
     pub data: UserData,
+}
+
+pub fn filter_user_record(user: &User) -> FilteredUser {
+    FilteredUser {
+        id: user.id.to_string(),
+        email: user.email.to_owned(),
+    }
 }

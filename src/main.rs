@@ -10,7 +10,8 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Executor};
 
 // Modules 
 mod config;
-mod handler;
+mod user_handler;
+mod auth_handler;
 mod jwt_auth;
 mod model;
 mod response;
@@ -83,7 +84,10 @@ async fn main() -> std::io::Result<()> {
                 env: config.clone(),
                 redis_client: redis_client.clone(),
             }))
-            .configure(handler::config)
+            .configure(|cfg| {
+                user_handler::config(cfg);
+                auth_handler::config(cfg);
+            })
             .wrap(cors)
             .wrap(Logger::default())
             
