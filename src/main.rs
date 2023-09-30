@@ -13,9 +13,10 @@ mod config;
 mod user_handler;
 mod auth_handler;
 mod jwt_auth;
-mod model;
+mod user_model;
 mod response;
-mod token;
+mod token_model;
+mod token_service;
 
 // Types
 pub struct AppState {

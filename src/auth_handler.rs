@@ -1,8 +1,8 @@
 use crate::{
     jwt_auth,
-    model::{LoginUserSchema,  User, RefreshSchema},
+    user_model::{LoginUserSchema,  User, RefreshSchema},
     response::filter_user_record,
-    token, AppState
+    token_service, AppState
 };
 use actix_web::{
     get, post, web, HttpMessage, HttpRequest, HttpResponse, Responder,
@@ -48,7 +48,7 @@ async fn login_user_handler(
     }
 
 
-    let access_token_details = match token::generate_jwt_token(
+    let access_token_details = match token_service::generate_jwt_token(
         user.id,
         data.env.access_token_max_age,
         data.env.access_token_private_key.to_owned(),
@@ -60,7 +60,7 @@ async fn login_user_handler(
         }
     };
 
-    let refresh_token_details = match token::generate_jwt_token(
+    let refresh_token_details = match token_service::generate_jwt_token(
         user.id,
         data.env.refresh_token_max_age,
         data.env.refresh_token_private_key.to_owned(),
@@ -90,7 +90,7 @@ async fn refresh_token_handler(
 
 
     let refresh_token_details =
-        match token::verify_jwt_token(data.env.refresh_token_public_key.to_owned(), &refresh_token)
+        match token_service::verify_jwt_token(data.env.refresh_token_public_key.to_owned(), &refresh_token)
         {
             Ok(token_details) => token_details,
             Err(_) => {
@@ -136,7 +136,7 @@ async fn refresh_token_handler(
 
     let user = query_result.unwrap();
 
-    let access_token_details = match token::generate_jwt_token(
+    let access_token_details = match token_service::generate_jwt_token(
         user.id,
         data.env.access_token_max_age,
         data.env.access_token_private_key.to_owned(),
@@ -158,7 +158,7 @@ async fn refresh_token_handler(
         )
         .await;
     
-    let refresh_token_details = match token::generate_jwt_token(
+    let refresh_token_details = match token_service::generate_jwt_token(
         user.id,
         data.env.refresh_token_max_age,
         data.env.refresh_token_private_key.to_owned(),
