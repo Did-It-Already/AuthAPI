@@ -33,10 +33,10 @@ RUN --mount=type=bind,source=src,target=src \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     <<EOF
 set -e
-cargo build --locked --release
+cargo build --locked --release 
 cp ./target/release/$APP_NAME /bin/server
 EOF
-
+RUN unset DATABASE_URL
 ################################################################################
 # Create a new stage for running the application that contains the minimal
 # runtime dependencies for the application. This often uses a different base
