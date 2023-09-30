@@ -7,8 +7,8 @@ use actix_web::{http, web, FromRequest, HttpRequest, HttpMessage};
 use futures::executor::block_on;
 use serde::{Serialize};
 
-use crate::model::User;
-use crate::token;
+use crate::user_model::User;
+use crate::token_service;
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -47,7 +47,7 @@ impl FromRequest for JwtMiddleware {
             return ready(Err(ErrorUnauthorized(json_error)));
         }
 
-        let token_details = match token::verify_jwt_token(
+        let token_details = match token_service::verify_jwt_token(
             data.env.access_token_public_key.to_owned(),
             &access_token.unwrap(),
         ) {

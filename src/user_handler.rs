@@ -1,5 +1,5 @@
 use crate::{
-    model::{RegisterUserSchema, User},
+    user_model::{RegisterUserSchema, User},
     response::filter_user_record, AppState
 };
 use actix_web::{

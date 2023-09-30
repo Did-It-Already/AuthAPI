@@ -1,5 +1,5 @@
 use serde::Serialize;
-use crate::model::User;
+use crate::user_model::User;
 
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize)]
