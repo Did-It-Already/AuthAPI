@@ -13,9 +13,12 @@ use argon2::{
 };
 use redis::AsyncCommands;
 use serde_json::json;
+use uuid::Uuid;
 
-
-
+pub fn fetch_user_by_id_query(param: &Uuid) -> (&'static str, &Uuid) {
+    let query = "SELECT * FROM users WHERE id = $1";
+    (query, param)
+}
 
 #[post("/login")]
 async fn login_user_handler(
@@ -124,7 +127,9 @@ async fn refresh_token_handler(
     }
 
     let user_id_uuid = refresh_token_details.user_id.to_owned();
-    let query_result = sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", user_id_uuid)
+
+    let (fetch_query,param) = fetch_user_by_id_query(&user_id_uuid);
+    let query_result = sqlx::query_as(fetch_query).bind(param)
         .fetch_optional(&data.db)
         .await
         .unwrap();
@@ -134,7 +139,7 @@ async fn refresh_token_handler(
             .json(serde_json::json!({"status": "fail", "message": "the user belonging to this token no logger exists"}));
     }
 
-    let user = query_result.unwrap();
+    let user: User = query_result.unwrap();
 
     let access_token_details = match token_service::generate_jwt_token(
         user.id,
@@ -189,8 +194,8 @@ async fn check_token_handler(
 ) -> impl Responder {
     let ext = req.extensions();
     let user_id = ext.get::<uuid::Uuid>().unwrap();
-
-    let user = sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", user_id)
+    let (fetch_query,param) = fetch_user_by_id_query(user_id);
+    let user = sqlx::query_as(fetch_query).bind(param)
         .fetch_one(&data.db)
         .await
         .unwrap();

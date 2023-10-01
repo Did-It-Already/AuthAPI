@@ -4,8 +4,8 @@ use crate::user_model::User;
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize)]
 pub struct FilteredUser {
-    pub id: String,
     pub email: String,
+    pub user_id: i32,
 }
 
 #[derive(Serialize, Debug)]
