@@ -38,9 +38,10 @@ async fn register_user_handler(
         .to_string();
     let query_result = sqlx::query_as!(
         User,
-        "INSERT INTO users (email,password) VALUES ($1, $2) RETURNING *",
+        "INSERT INTO users (email,password, user_id) VALUES ($1, $2, $3) RETURNING *",
         body.email.to_string().to_lowercase(),
-        hashed_password
+        hashed_password,
+        body.user_id
     )
     .fetch_one(&data.db)
     .await;

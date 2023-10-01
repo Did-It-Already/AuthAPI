@@ -7,6 +7,7 @@ pub struct User {
     pub id: uuid::Uuid,
     pub email: String,
     pub password: String,
+    pub user_id: i32, 
     #[serde(rename = "createdAt")]
     pub created_at: Option<DateTime<Utc>>,
 }
@@ -16,6 +17,7 @@ pub struct User {
 pub struct RegisterUserSchema {
     pub email: String,
     pub password: String,
+    pub user_id: i32,
 }
 
 #[derive(Debug, Deserialize)]

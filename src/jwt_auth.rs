@@ -10,6 +10,12 @@ use serde::{Serialize};
 use crate::user_model::User;
 use crate::token_service;
 use crate::AppState;
+use uuid::Uuid;
+
+pub fn fetch_user_by_id_query(param: &Uuid) -> (&'static str, &Uuid) {
+    let query = "SELECT * FROM users WHERE id = $1";
+    (query, param)
+}
 
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
@@ -64,9 +70,8 @@ impl FromRequest for JwtMiddleware {
         let user_id_uuid = token_details.user_id.to_owned();
         let user_exists_result = async move {
 
-
-            let query_result =
-                sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", user_id_uuid)
+            let (fetch_query,param) = fetch_user_by_id_query(&user_id_uuid);
+            let query_result:  Result<Option<User>, sqlx::Error> = sqlx::query_as(fetch_query).bind(&param)
                     .fetch_optional(&data.db)
                     .await;
 

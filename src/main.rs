@@ -36,12 +36,7 @@ async fn main() -> std::io::Result<()> {
     let config = Config::init();
 
     let pool = match PgPoolOptions::new()
-        .max_connections(10)
-        .after_connect(|conn, _meta| Box::pin(async move {   
-            conn.execute("DEALLOCATE ALL;")
-                .await?;
-            Ok(())
-        }))
+        .max_connections(1)
         .connect(&config.database_url)
         .await
     {
@@ -70,8 +65,8 @@ async fn main() -> std::io::Result<()> {
     println!("🚀  Server started successfully ");
 
     HttpServer::new(move || { 
-        let cors = Cors::default()
-            .allowed_origin("http://0.0.0.0:3000")
+        let cors = Cors::permissive()
+            .allowed_origin("http://0.0.0.0:5000")
             .allowed_methods(vec!["GET", "POST"])
             .allowed_headers(vec![
                 header::CONTENT_TYPE,
