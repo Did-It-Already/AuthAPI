@@ -5,7 +5,7 @@ use actix_web::{http::header, web, App, HttpServer};
 use config::Config;
 use dotenv::dotenv;
 use redis::Client;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Executor};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 
 // Modules 
@@ -36,7 +36,7 @@ async fn main() -> std::io::Result<()> {
     let config = Config::init();
 
     let pool = match PgPoolOptions::new()
-        .max_connections(1)
+        .max_connections(5)
         .connect(&config.database_url)
         .await
     {
