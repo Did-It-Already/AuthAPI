@@ -12,10 +12,7 @@ use crate::token_service;
 use crate::AppState;
 use uuid::Uuid;
 
-pub fn fetch_user_by_id_query(param: &Uuid) -> (&'static str, &Uuid) {
-    let query = "SELECT * FROM users WHERE id = $1";
-    (query, param)
-}
+use crate::user_service::{fetch_user_by_id_query};
 
 #[derive(Debug, Serialize)]
 struct ErrorResponse {

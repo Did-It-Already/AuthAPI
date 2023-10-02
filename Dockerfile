@@ -11,6 +11,8 @@ ARG RUST_VERSION=1.72.0
 ARG APP_NAME=auth_ms
 FROM rust:${RUST_VERSION}-slim-bullseye AS build
 ARG APP_NAME
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
 WORKDIR /app
 
 # Build the application.
@@ -25,7 +27,6 @@ RUN apt-get install -y
 RUN apt install libssl-dev
 RUN apt install pkg-config -y
 RUN rm -rf /var/lib/apt/lists/*
-ENV DATABASE_URL=postgres://default:hsfi37yImdxu@ep-calm-wave-80655746.us-east-1.postgres.vercel-storage.com:5432/verceldb
 RUN --mount=type=bind,source=src,target=src \
     --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
@@ -36,7 +37,6 @@ set -e
 cargo build --locked --release 
 cp ./target/release/$APP_NAME /bin/server
 EOF
-RUN unset DATABASE_URL
 ################################################################################
 # Create a new stage for running the application that contains the minimal
 # runtime dependencies for the application. This often uses a different base
