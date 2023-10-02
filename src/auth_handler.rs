@@ -1,7 +1,7 @@
 use crate::{
     jwt_auth,
     user_model::{LoginUserSchema,  User, RefreshSchema},
-    user_service::filter_user_record,
+    user_service::{filter_user_record,fetch_user_by_id_query},
     token_service, AppState
 };
 use actix_web::{
@@ -15,10 +15,6 @@ use redis::AsyncCommands;
 use serde_json::json;
 use uuid::Uuid;
 
-pub fn fetch_user_by_id_query(param: &Uuid) -> (&'static str, &Uuid) {
-    let query = "SELECT * FROM users WHERE id = $1";
-    (query, param)
-}
 
 #[post("/login")]
 async fn login_user_handler(
@@ -103,7 +99,6 @@ async fn refresh_token_handler(
             }
         };
     let result = data.redis_client.get_async_connection().await;
-    println!("{}", result.is_err());
     let mut redis_client = match result {
         Ok(redis_client) => redis_client,
         Err(e) => {
