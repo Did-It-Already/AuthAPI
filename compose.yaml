@@ -15,12 +15,12 @@ services:
     ports:
       - 8000:8000
     environment:
-      - POSTGRES_HOST=ep-calm-wave-80655746-pooler.us-east-1.postgres.vercel-storage.com
+      - POSTGRES_HOST=ep-calm-wave-80655746.us-east-1.postgres.vercel-storage.com
       - POSTGRES_PORT=5432
       - POSTGRES_USER=default
       - POSTGRES_PASSWORD=hsfi37yImdxu
       - POSTGRES_DB=verceldb
-      - DATABASE_URL=postgres://default:hsfi37yImdxu@ep-calm-wave-80655746-pooler.us-east-1.postgres.vercel-storage.com:5432/verceldb
+      - DATABASE_URL=postgres://default:hsfi37yImdxu@ep-calm-wave-80655746.us-east-1.postgres.vercel-storage.com:5432/verceldb
       - PORT=8000
       - CLIENT_ORIGIN=http://0.0.0.0:3000
       - REDIS_URL=redis://default:X0JKxJQCPmPJkex2S7DfVnrf0utuYLVM@redis-16392.c11.us-east-1-3.ec2.cloud.redislabs.com:16392

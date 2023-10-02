@@ -25,7 +25,7 @@ RUN apt-get install -y
 RUN apt install libssl-dev
 RUN apt install pkg-config -y
 RUN rm -rf /var/lib/apt/lists/*
-ENV DATABASE_URL=postgres://default:hsfi37yImdxu@ep-calm-wave-80655746-pooler.us-east-1.postgres.vercel-storage.com:5432/verceldb
+ENV DATABASE_URL=postgres://default:hsfi37yImdxu@ep-calm-wave-80655746.us-east-1.postgres.vercel-storage.com:5432/verceldb
 RUN --mount=type=bind,source=src,target=src \
     --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
