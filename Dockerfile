@@ -24,7 +24,7 @@ WORKDIR /app
 # output directory before the cache mounted /app/target is unmounted.
 RUN apt-get update
 RUN apt-get install -y 
-RUN apt install libssl-dev
+RUN apt install libssl-dev -y
 RUN apt install pkg-config -y
 RUN rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,source=src,target=src \
