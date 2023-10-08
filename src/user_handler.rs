@@ -3,7 +3,7 @@ use crate::{
     user_service::filter_user_record, AppState
 };
 use actix_web::{
-     post, web, HttpResponse, Responder,
+     post, web, HttpResponse, Responder,delete
 };
 use argon2::{
     password_hash::{rand_core::OsRng,  PasswordHasher, SaltString},
@@ -11,9 +11,9 @@ use argon2::{
 };
 
 use sqlx::Row;
+use uuid::Uuid;
 
-
-#[post("/register")]
+#[post("/")]
 async fn register_user_handler(
     body: web::Json<RegisterUserSchema>,
     data: web::Data<AppState>,
@@ -61,10 +61,44 @@ async fn register_user_handler(
     }
 }
 
+#[delete("/{id}")]
+async fn delete_user_handler(
+    path: web::Path<Uuid>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let id =path.into_inner();
+    let _exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(id)
+        .fetch_one(&data.db)
+        .await
+        .unwrap()
+        .get(0);
+
+    let query_result = sqlx::query_as!(
+        User,
+        "DELETE FROM users WHERE id  = $1  RETURNING *",
+        id
+    )
+    .fetch_one(&data.db)
+    .await;
+
+    match query_result {
+        Ok(_) => {
+            let response = serde_json::json!({"status": "success","message": "User deleted successfully"});
+            return HttpResponse::Ok().json(response);
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", e)}));
+        }
+    }
+}
+
 
 
 pub fn config(conf: &mut web::ServiceConfig) {
     let scope = web::scope("/api/user")
-        .service(register_user_handler);
+        .service(register_user_handler)
+        .service(delete_user_handler);
     conf.service(scope);
 }

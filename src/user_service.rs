@@ -8,6 +8,7 @@ pub fn filter_user_record(user: &User) -> FilteredUser {
     FilteredUser {
         user_id: user.user_id,
         email: user.email.to_owned(),
+        id: user.id.to_owned()
     }
 }
 
