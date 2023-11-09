@@ -5,9 +5,11 @@ use actix_web::{http::header, web, App, HttpServer};
 use config::Config;
 use dotenv::dotenv;
 use redis::Client;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-
-
+use ldap3::{LdapConnAsync, Scope, SearchEntry};
+use ldap3::result::Result;
+use std::collections::HashSet;
+use std::sync::Mutex;
+use deadpool_ldap::{Manager, Pool};
 // Modules 
 mod config;
 mod user_handler;
@@ -18,12 +20,14 @@ mod response;
 mod token_model;
 mod token_service;
 mod user_service;
+mod ldap_service;
 // Types
 pub struct AppState {
-    db: Pool<Postgres>,
     env: Config,
     redis_client: Client,
+    ldap_pool: Pool,
 }
+pub struct LdapConnAsyncManager;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -35,22 +39,7 @@ async fn main() -> std::io::Result<()> {
     
     let config = Config::init();
 
-    let pool = match PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&config.database_url)
-        .await
-    {
-        Ok(pool) => {
-            println!("✅Connection to pg database is successful!");
-
-            pool
-        }
-        Err(e) => {
-            println!("Failed to connect to Postgres");
-            println!("Error: {:?}", e);
-            return Ok(());
-        }
-    };
+    
     let redis_client = match Client::open(config.redis_url.to_owned()) {
         Ok(client) => {
             println!("✅Connection to the redis is successful!");
@@ -62,6 +51,17 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    let manager = Manager::new("ldap://host.docker.internal:389");
+    let pool = match Pool::builder(manager).max_size(10).build() {
+        Ok(pool) => {
+            println!("✅Connection to the LDAP is successful!");
+            pool
+        }
+        Err(e) => {
+            println!("Error connecting to LDAP: {}", e);
+            std::process::exit(1);
+        }
+    };
     println!("🚀  Server started successfully ");
 
     HttpServer::new(move || { 
@@ -76,9 +76,9 @@ async fn main() -> std::io::Result<()> {
             .supports_credentials();
         App::new()
             .app_data(web::Data::new(AppState {
-                db: pool.clone(),
                 env: config.clone(),
                 redis_client: redis_client.clone(),
+                ldap_pool: pool.clone(),
             }))
             .configure(|cfg| {
                 user_handler::config(cfg);

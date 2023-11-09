@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct TokenDetails {
     pub token: Option<String>,
     pub token_uuid: uuid::Uuid,
-    pub user_id: uuid::Uuid,
+    pub user_id:u64,
     pub expires_in: Option<i64>,
 }
 

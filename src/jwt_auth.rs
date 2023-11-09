@@ -6,10 +6,12 @@ use actix_web::{dev::Payload, Error as ActixWebError};
 use actix_web::{http, web, FromRequest, HttpRequest, HttpMessage};
 use futures::executor::block_on;
 use serde::{Serialize};
+use ldap3::{LdapConn, Scope, SearchEntry};
 
 use crate::user_model::User;
 use crate::token_service;
 use crate::AppState;
+use crate::ldap_service::get_admin_ldap;
 use uuid::Uuid;
 
 use crate::user_service::{fetch_user_by_id_query};
@@ -27,7 +29,7 @@ impl fmt::Display for ErrorResponse {
 }
 
 pub struct JwtMiddleware {
-    pub user_id: uuid::Uuid,
+    pub user_id: u64,
 }
 
 impl FromRequest for JwtMiddleware {
@@ -57,46 +59,46 @@ impl FromRequest for JwtMiddleware {
             Ok(token_details) => token_details,
             Err(e) => {
                 let json_error = ErrorResponse {
-                    status: "fail".to_string(),
-                    message: format!("{:?}", e),
+                    status: "Fail".to_string(),
+                    message: "Invalid Token".to_string(),
                 };
                 return ready(Err(ErrorUnauthorized(json_error)));
             }
         };
 
-        let user_id_uuid = token_details.user_id.to_owned();
+        let user_id= token_details.user_id;
         let user_exists_result = async move {
 
-            let (fetch_query,param) = fetch_user_by_id_query(&user_id_uuid);
-            let query_result:  Result<Option<User>, sqlx::Error> = sqlx::query_as(fetch_query).bind(&param)
-                    .fetch_optional(&data.db)
-                    .await;
+        let base_dn = "ou=dia,dc=diditalready,dc=com";
+        let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",user_id);
+        let ldap = get_admin_ldap(&data.ldap_pool).await;
+        let mut ldap = match ldap {
+            Ok(ldap) => ldap,
+            Err(err) => return Err(ErrorInternalServerError("LDAP connection error".to_string())),
+        };
+            let search_result = ldap
+                .search(
+                    &base_dn,
+                    Scope::Subtree,
+                    &filter, 
+                    vec!["uid"],
+                )
+                .await.unwrap();
 
-            match query_result {
-                Ok(Some(user)) => Ok(user),
-                Ok(None) => {
-                    let json_error = ErrorResponse {
-                        status: "Failed".to_string(),
-                        message: "the user belonging to this token no longer exists".to_string(),
-                    };
-                    Err(ErrorUnauthorized(json_error))
-                }
-                Err(_) => {
-                    let json_error = ErrorResponse {
-                        status: "Error".to_string(),
-                        message: "Failed to check user existence".to_string(),
-                    };
-                    Err(ErrorInternalServerError(json_error))
-                }
+            let (rs,_res) =search_result.success().unwrap() ;
+            if rs.len() == 0 {
+                return Err(ErrorUnauthorized("User not found".to_string()));
             }
+            return Ok(());
+            
         };
 
         req.extensions_mut()
-            .insert::<uuid::Uuid>(token_details.user_id.to_owned());
+            .insert(token_details.user_id);
 
         match block_on(user_exists_result) {
             Ok(_user) => ready(Ok(JwtMiddleware {
-                user_id: token_details.user_id.to_owned()
+                user_id: token_details.user_id
             })),
             Err(error) => ready(Err(error)),
         }

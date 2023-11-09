@@ -11,8 +11,6 @@ ARG RUST_VERSION=1.72.0
 ARG APP_NAME=auth_ms
 FROM rust:${RUST_VERSION}-slim-bullseye AS build
 ARG APP_NAME
-ARG DATABASE_URL
-ENV DATABASE_URL=${DATABASE_URL}
 WORKDIR /app
 
 # Build the application.

@@ -2,7 +2,8 @@ use crate::{
     jwt_auth,
     user_model::{LoginUserSchema,  User, RefreshSchema},
     user_service::{filter_user_record,fetch_user_by_id_query},
-    token_service, AppState
+    token_service, AppState,
+    ldap_service::get_admin_ldap
 };
 use actix_web::{
     get, post, web, HttpMessage, HttpRequest, HttpResponse, Responder,
@@ -14,41 +15,105 @@ use argon2::{
 use redis::AsyncCommands;
 use serde_json::json;
 use uuid::Uuid;
-
-
+use ldap3::{LdapConn, Scope, SearchEntry};
+use tokio::runtime::Runtime;
+use std::thread;
 #[post("/login")]
 async fn login_user_handler(
     body: web::Json<LoginUserSchema>,
     data: web::Data<AppState>,
 ) -> impl Responder {
-    let query_result = sqlx::query_as!(User, "SELECT * FROM users WHERE email = $1", body.email)
-        .fetch_optional(&data.db)
-        .await
-        .unwrap();
-
-    let user = match query_result {
-        Some(user) => user,
-        None => {
-            return HttpResponse::BadRequest().json(
-                serde_json::json!({"status": "fail", "message": "Invalid email or password"}),
-            );
+    let base_dn = "ou=dia,dc=diditalready,dc=com";
+    let email = body.email.as_str();
+    let filter = format!("(&(objectClass=inetOrgPerson)(mail={}))",email);
+    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let mut ldap = match ldap {
+        Ok(ldap) => ldap,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+    let search_result = ldap
+        .search(
+            &base_dn,
+            Scope::Subtree,
+            &filter, 
+            vec!["uid"],
+        )
+        .await;
+    let search_result = match search_result {
+        Ok(search_result) => search_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
         }
     };
 
-    let is_valid = PasswordHash::new(&user.password)
-        .and_then(|parsed_hash| {
-            Argon2::default().verify_password(body.password.as_bytes(), &parsed_hash)
-        })
-        .map_or(false, |_| true);
-
-    if !is_valid {
-        return HttpResponse::BadRequest()
-            .json(json!({"status": "fail", "message": "Invalid email or password"}));
+    let (rs,_res) = match search_result.success() {
+        Ok(search_result) => search_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+    if !(rs.len() > 0) {
+        return HttpResponse::Conflict().json(
+            serde_json::json!({"status": "fail","message": "Invalid email or password"}),
+        );    
     }
 
 
+
+
+    // check password in ldap
+    let password = body.password.as_str();
+
+    let mut user_ldap = match data.ldap_pool.get().await {
+        Ok(user_ldap) => user_ldap,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("Could not connect to LDAP: {}", e)}));
+        }
+    };
+
+
+
+    let user_id = match rs.into_iter().next() {
+        Some(entry) => {
+            let user = SearchEntry::construct(entry);
+            let user_id = user.attrs.get("uid").unwrap().get(0).unwrap().parse::<u64>().unwrap();
+            user_id
+        },
+        None => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": "User not found"}));
+        }
+    };
+
+    let dn = format!("uid={},{}", user_id, base_dn);
+    let password = body.password.as_str(); // The password to check
+
+    let bind_result = match user_ldap.simple_bind(dn.as_str(), password).await{
+        Ok(bind_result) =>bind_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": "Invalid email or password"}));
+        }
+    };  
+    let bind_result = match bind_result.success() {
+        Ok(_) => {},
+        Err(err) => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({"status": "error","message": "Invalid email or password"}));
+        }
+    };  
+
+    
+
+
     let access_token_details = match token_service::generate_jwt_token(
-        user.id,
+        user_id,
         data.env.access_token_max_age,
         data.env.access_token_private_key.to_owned(),
     ) {
@@ -60,7 +125,7 @@ async fn login_user_handler(
     };
 
     let refresh_token_details = match token_service::generate_jwt_token(
-        user.id,
+        user_id,
         data.env.refresh_token_max_age,
         data.env.refresh_token_private_key.to_owned(),
     ) {
@@ -121,23 +186,50 @@ async fn refresh_token_handler(
             .json(serde_json::json!({"status": "fail", "message": "The refresh token has already been used"}));
     }
 
-    let user_id_uuid = refresh_token_details.user_id.to_owned();
+    let user_id= refresh_token_details.user_id;
 
-    let (fetch_query,param) = fetch_user_by_id_query(&user_id_uuid);
-    let query_result = sqlx::query_as(fetch_query).bind(param)
-        .fetch_optional(&data.db)
-        .await
-        .unwrap();
+    let base_dn = "ou=dia,dc=diditalready,dc=com";
+    let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",user_id);
+    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let mut ldap = match ldap {
+        Ok(ldap) => ldap,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+    let search_result = ldap
+        .search(
+            &base_dn,
+            Scope::Subtree,
+            &filter, 
+            vec!["uid"],
+        )
+        .await;
+    let search_result = match search_result {
+        Ok(search_result) => search_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
 
-    if query_result.is_none() {
-        return HttpResponse::Forbidden()
-            .json(serde_json::json!({"status": "fail", "message": "the user belonging to this token no logger exists"}));
+    let (rs,_res) = match search_result.success() {
+        Ok(search_result) => search_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+    if !(rs.len() > 0) {
+        return HttpResponse::Conflict().json(
+            serde_json::json!({"status": "fail","message": "the user belonging to this token no longer exists"}),
+        );    
     }
 
-    let user: User = query_result.unwrap();
 
     let access_token_details = match token_service::generate_jwt_token(
-        user.id,
+        user_id,
         data.env.access_token_max_age,
         data.env.access_token_private_key.to_owned(),
     ) {
@@ -153,13 +245,13 @@ async fn refresh_token_handler(
     let redis_result: redis::RedisResult<()> = redis_client
         .set_ex(
             refresh_token_details.token_uuid.to_string(),
-            user.id.to_string(),
+            user_id.to_string(),
             (data.env.access_token_max_age * 60) as usize,
         )
         .await;
     
     let refresh_token_details = match token_service::generate_jwt_token(
-        user.id,
+        user_id,
         data.env.refresh_token_max_age,
         data.env.refresh_token_private_key.to_owned(),
     ) {
@@ -188,17 +280,66 @@ async fn check_token_handler(
     _: jwt_auth::JwtMiddleware,
 ) -> impl Responder {
     let ext = req.extensions();
-    let user_id = ext.get::<uuid::Uuid>().unwrap();
-    let (fetch_query,param) = fetch_user_by_id_query(user_id);
-    let user = sqlx::query_as(fetch_query).bind(param)
-        .fetch_one(&data.db)
-        .await
-        .unwrap();
+    let user_id = ext.get::<u64>().unwrap().to_owned();
+    let base_dn = "ou=dia,dc=diditalready,dc=com";
+    let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",user_id);
+    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let mut ldap = match ldap {
+        Ok(ldap) => ldap,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+    let search_result = ldap
+        .search(
+            &base_dn,
+            Scope::Subtree,
+            &filter, 
+            vec!["mail"],
+        )
+        .await;
+    let search_result = match search_result {
+        Ok(search_result) => search_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+
+    let (rs,_res) = match search_result.success() {
+        Ok(search_result) => search_result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": format!("{:?}", err)}));
+        }
+    };
+    if !(rs.len() > 0) {
+        return HttpResponse::Conflict().json(
+            serde_json::json!({"status": "fail","message": "the user belonging to this token no longer exists"}),
+        );    
+    }
+
+    let email = match rs.into_iter().next() {
+        Some(entry) => {
+            let user = SearchEntry::construct(entry);
+            let email = user.attrs.get("mail").unwrap().get(0).unwrap().to_string();
+            email
+        },
+        None => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"status": "error","message": "Mail not found"}));
+        }
+    };
 
     let json_response = serde_json::json!({
         "status":  "success",
         "data": serde_json::json!({
-            "user": filter_user_record(&user)
+            "user": {
+                "id": user_id,
+                "email": email,
+                "user_id": user_id
+            }
         })
     });
 
