@@ -67,40 +67,15 @@ impl FromRequest for JwtMiddleware {
         };
 
         let user_id= token_details.user_id;
-        let user_exists_result = async move {
 
-        let base_dn = "ou=dia,dc=diditalready,dc=com";
-        let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",user_id);
-        let ldap = get_admin_ldap(&data.ldap_pool).await;
-        let mut ldap = match ldap {
-            Ok(ldap) => ldap,
-            Err(err) => return Err(ErrorInternalServerError("LDAP connection error".to_string())),
-        };
-            let search_result = ldap
-                .search(
-                    &base_dn,
-                    Scope::Subtree,
-                    &filter, 
-                    vec!["uid"],
-                )
-                .await.unwrap();
-
-            let (rs,_res) =search_result.success().unwrap() ;
-            if rs.len() == 0 {
-                return Err(ErrorUnauthorized("User not found".to_string()));
-            }
-            return Ok(());
-            
-        };
+        // check if user exists in ldap 
+       
 
         req.extensions_mut()
             .insert(token_details.user_id);
-
-        match block_on(user_exists_result) {
-            Ok(_user) => ready(Ok(JwtMiddleware {
-                user_id: token_details.user_id
-            })),
-            Err(error) => ready(Err(error)),
-        }
+        
+        ready(Ok(JwtMiddleware {
+            user_id: token_details.user_id
+        }))
     }
 }

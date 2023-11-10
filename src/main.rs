@@ -62,6 +62,15 @@ async fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
     };
+
+    //exec a mock search
+    let mut ldap = pool.get().await.unwrap();
+    let bind_result = ldap.simple_bind("cn=admin, dc=diditalready,dc=com", "admin").await.unwrap();
+    match bind_result.success() {
+        Ok(_) => println!("✅LDAP Bind successful"),
+        Err(err) => println!("❌LDAP Bind failed: {}", err),
+    }
+
     println!("🚀  Server started successfully ");
 
     HttpServer::new(move || { 
