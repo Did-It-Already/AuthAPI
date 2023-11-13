@@ -20,9 +20,9 @@ impl From<LdapError> for MyError {
     }
 }
 
-pub async fn get_admin_ldap(pool: &Pool) -> Result<Object<Manager>, MyError> {
+pub async fn get_admin_ldap(pool: &Pool, admin_dn: &str, admin_password:&str  ) -> Result<Object<Manager>, MyError> {
     let mut ldap = pool.get().await?;
-    let bind_result = ldap.simple_bind("cn=admin, dc=diditalready,dc=com", "admin").await?;
+    let bind_result = ldap.simple_bind(admin_dn, admin_password).await?;
     match bind_result.success() {
         Ok(_) => println!("✅LDAP Bind successful"),
         Err(err) => return Err(MyError::from(err)),

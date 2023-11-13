@@ -51,7 +51,7 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    let manager = Manager::new("ldap://host.docker.internal:389");
+    let manager = Manager::new(config.ldap_url.to_owned());
     let pool = match Pool::builder(manager).max_size(10).build() {
         Ok(pool) => {
             println!("✅Connection to the LDAP is successful!");
@@ -65,7 +65,7 @@ async fn main() -> std::io::Result<()> {
 
     //exec a mock search
     let mut ldap = pool.get().await.unwrap();
-    let bind_result = ldap.simple_bind("cn=admin, dc=diditalready,dc=com", "admin").await.unwrap();
+    let bind_result = ldap.simple_bind(&config.ldap_admin_dn.to_owned(), &config.ldap_admin_password.to_owned()).await.unwrap();
     match bind_result.success() {
         Ok(_) => println!("✅LDAP Bind successful"),
         Err(err) => println!("❌LDAP Bind failed: {}", err),

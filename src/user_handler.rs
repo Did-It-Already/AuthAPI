@@ -31,7 +31,7 @@ async fn register_user_handler(
     let dn = format!("uid={},{}", user_id, base_dn);
     let filter = format!("(&(objectClass=inetOrgPerson)(|(mail={})(uid={})))", email,user_id);
     // check if user exists
-    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let ldap = get_admin_ldap(&data.ldap_pool,&data.env.ldap_admin_dn,&data.env.ldap_admin_password).await;
     let mut ldap = match ldap {
         Ok(ldap) => ldap,
         Err(err) => {
@@ -118,7 +118,7 @@ async fn delete_user_handler(
     let id =path.into_inner();
     let base_dn = "ou=dia,dc=diditalready,dc=com";
     let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",id);
-    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let ldap = get_admin_ldap(&data.ldap_pool,&data.env.ldap_admin_dn,&data.env.ldap_admin_password).await;
     let mut ldap = match ldap {
         Ok(ldap) => ldap,
         Err(err) => {

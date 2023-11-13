@@ -16,6 +16,9 @@ pub struct Config {
     pub refresh_token_public_key: String,
     pub refresh_token_expires_in: String,
     pub refresh_token_max_age: i64,
+    pub ldap_url: String,
+    pub ldap_admin_dn: String,
+    pub ldap_admin_password: String
 }
 
 impl Config {
@@ -32,6 +35,9 @@ impl Config {
         let refresh_token_public_key = get_env_var("REFRESH_TOKEN_PUBLIC_KEY");
         let refresh_token_expires_in = get_env_var("REFRESH_TOKEN_EXPIRED_IN");
         let refresh_token_max_age = get_env_var("REFRESH_TOKEN_MAXAGE");
+        let ldap_url = get_env_var("LDAP_URL");
+        let ldap_admin_dn = get_env_var("LDAP_ADMIN_DN");
+        let ldap_admin_password = get_env_var("LDAP_ADMIN_PASSWORD");
 
         Config {
             redis_url,
@@ -44,6 +50,11 @@ impl Config {
             refresh_token_expires_in,
             access_token_max_age: access_token_max_age.parse::<i64>().unwrap(),
             refresh_token_max_age: refresh_token_max_age.parse::<i64>().unwrap(),
+            ldap_url,
+            ldap_admin_dn,
+            ldap_admin_password
+            
+            
         }
     }
 }

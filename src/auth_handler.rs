@@ -26,7 +26,7 @@ async fn login_user_handler(
     let base_dn = "ou=dia,dc=diditalready,dc=com";
     let email = body.email.as_str();
     let filter = format!("(&(objectClass=inetOrgPerson)(mail={}))",email);
-    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let ldap = get_admin_ldap(&data.ldap_pool, &data.env.ldap_admin_dn,&data.env.ldap_admin_password).await;
     let mut ldap = match ldap {
         Ok(ldap) => ldap,
         Err(err) => {
@@ -190,7 +190,7 @@ async fn refresh_token_handler(
 
     let base_dn = "ou=dia,dc=diditalready,dc=com";
     let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",user_id);
-    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let ldap = get_admin_ldap(&data.ldap_pool,&data.env.ldap_admin_dn,&data.env.ldap_admin_password).await;
     let mut ldap = match ldap {
         Ok(ldap) => ldap,
         Err(err) => {
@@ -283,7 +283,7 @@ async fn check_token_handler(
     let user_id = ext.get::<u64>().unwrap().to_owned();
     let base_dn = "ou=dia,dc=diditalready,dc=com";
     let filter = format!("(&(objectClass=inetOrgPerson)(uid={}))",user_id);
-    let ldap = get_admin_ldap(&data.ldap_pool).await;
+    let ldap = get_admin_ldap(&data.ldap_pool,&data.env.ldap_admin_dn,&data.env.ldap_admin_password).await;
     let mut ldap = match ldap {
         Ok(ldap) => ldap,
         Err(err) => {
